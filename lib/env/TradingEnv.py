@@ -10,7 +10,7 @@ from lib.env.render import TradingChart
 from lib.env.reward import BaseRewardStrategy, IncrementalProfit, WeightedUnrealizedProfit
 from lib.env.trade import BaseTradeStrategy, SimulatedTradeStrategy
 from lib.data.providers import BaseDataProvider
-from lib.data.features.transform import max_min_normalize, mean_normalize, log_and_difference, difference
+from lib.data.features.transform import max_min_normalize, mean_normalize, log_and_difference, FastTransform, difference
 from lib.util.logger import init_logger
 
 
@@ -69,6 +69,10 @@ class TradingEnv(gym.Env):
         self.observation_space = spaces.Box(low=0, high=1, shape=self.obs_shape, dtype=np.float16)
 
         self.observations = pd.DataFrame(None, columns=self.data_provider.columns)
+        self.fast_transform_observations = FastTransform()
+        self.fast_transform_account_history = FastTransform()
+
+         self.fast_log_observation = self.observations
 
     def _current_price(self, ohlcv_key: str = 'Close'):
         return float(self.current_ohlcv[ohlcv_key])
@@ -165,12 +169,14 @@ class TradingEnv(gym.Env):
         self.observations = self.observations.append(self.current_ohlcv, ignore_index=True)
 
         if self.stationarize_obs:
-            observations = log_and_difference(self.observations, inplace=False)
+            log_observation = log_and_difference(self.observations.tail(2), inplace=False)
+            self.fast_log_observation = self.fast_log_observation.append(log_observation.tail(1), ignore_index=True)
+            observations = self.fast_log_observation
         else:
             observations = self.observations
 
         if self.normalize_obs:
-            observations = max_min_normalize(observations)
+            observations = self.fast_transform_observations.max_min_normalize(observations)
 
         obs = observations.values[-1]
 
@@ -180,7 +186,7 @@ class TradingEnv(gym.Env):
             scaled_history = self.account_history
 
         if self.normalize_obs:
-            scaled_history = max_min_normalize(scaled_history, inplace=False)
+            scaled_history = self.fast_transform_account_history.max_min_normalize(self.account_history)
 
         obs = np.insert(obs, len(obs), scaled_history.values[-1], axis=0)
 
@@ -188,6 +194,7 @@ class TradingEnv(gym.Env):
         obs[np.bitwise_not(np.isfinite(obs))] = 0
 
         return obs
+
 
     def reset(self):
         self.data_provider.reset_ohlcv_index()

@@ -72,7 +72,7 @@ class TradingEnv(gym.Env):
         self.fast_transform_observations = FastTransform()
         self.fast_transform_account_history = FastTransform()
 
-         self.fast_log_observation = self.observations
+        self.fast_log_observation = self.observations
 
     def _current_price(self, ohlcv_key: str = 'Close'):
         return float(self.current_ohlcv[ohlcv_key])

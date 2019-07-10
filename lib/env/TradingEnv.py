@@ -13,7 +13,6 @@ from lib.data.providers import BaseDataProvider
 from lib.data.features.transform import max_min_normalize, mean_normalize, log_and_difference, FastTransform, difference
 from lib.util.logger import init_logger
 
-
 class TradingEnvAction(Enum):
     BUY = 0
     SELL = 1

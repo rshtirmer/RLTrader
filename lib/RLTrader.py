@@ -28,7 +28,7 @@ def net_worths_to_returns(info):
     })
 
     net_worths.set_index('Date', drop=True, inplace=True)
-    returns = net_worths.pct_change()[1:]
+    returns = np.log(net_worths.Balance).diff()
 
     return net_worths, returns
 
@@ -184,9 +184,9 @@ class RLTrader:
                 if all(done):
                     net_worths, returns = net_worths_to_returns(info)
                     try:
-                        last_reward = qs.stats.sharpe(returns.Balance)
+                        last_reward = qs.stats.sharpe(returns)
                     except:
-                        pass
+                        last_reward = 0
                     n_episodes += 1
                     obs = validation_env.reset()
 
@@ -195,7 +195,7 @@ class RLTrader:
             if trial.should_prune(eval_idx):
                 raise optuna.structs.TrialPruned()
 
-        return -1 * sharpe
+        return -1 * last_reward
 
     def optimize(self, n_trials: int = 20):
         try:
@@ -292,11 +292,11 @@ class RLTrader:
                 profit = net_worths['Balance'].iloc[-1] - net_worths['Balance'].iloc[0]
 
                 if render_report:
-                    qs.plots.snapshot(returns.Balance, title='RL Trader Performance')
+                    qs.plots.snapshot(returns, title='RL Trader Performance')
 
                 if save_report:
                     reports_path = path.join('data', 'reports', f'{self.study_name}__{model_epoch}.html')
-                    qs.reports.html(returns.Balance, file=reports_path)
+                    qs.reports.html(returns, file=reports_path)
 
         self.logger.info(
             f'Finished testing model ({self.study_name}__{model_epoch}): ${"{:.2f}".format(profit)}')

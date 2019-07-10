@@ -3,6 +3,7 @@ import optuna
 import numpy as np
 import pandas as pd
 import quantstats as qs
+from empyrical import sharpe_ratio
 
 from os import path
 from typing import Dict
@@ -19,6 +20,17 @@ from lib.data.providers.dates import ProviderDateFormat
 from lib.data.providers import BaseDataProvider,  StaticDataProvider, ExchangeDataProvider
 from lib.util.logger import init_logger
 
+
+def net_worths_to_returns(info):
+    net_worths = pd.DataFrame({
+        'Date': info[0]['timestamps'],
+        'Balance': info[0]['net_worths'],
+    })
+
+    net_worths.set_index('Date', drop=True, inplace=True)
+    returns = net_worths.pct_change()[1:]
+
+    return net_worths, returns
 
 def make_env(data_provider: BaseDataProvider, rank: int = 0, seed: int = 0):
     def _init():
@@ -167,23 +179,23 @@ class RLTrader:
             obs = validation_env.reset()
             while n_episodes < n_tests_per_eval:
                 action, state = model.predict(obs, state=state)
-                obs, reward, done, _ = validation_env.step([action])
-
-                reward_sum += reward[0]
+                obs, reward, done, info = validation_env.step([action])
 
                 if all(done):
-                    rewards.append(reward_sum)
-                    reward_sum = 0.0
+                    net_worths, returns = net_worths_to_returns(info)
+                    try:
+                        last_reward = qs.stats.sharpe(returns.Balance)
+                    except:
+                        pass
                     n_episodes += 1
                     obs = validation_env.reset()
 
-            last_reward = np.mean(rewards)
             trial.report(-1 * last_reward, eval_idx)
 
             if trial.should_prune(eval_idx):
                 raise optuna.structs.TrialPruned()
 
-        return -1 * last_reward
+        return -1 * sharpe
 
     def optimize(self, n_trials: int = 20):
         try:
@@ -206,8 +218,8 @@ class RLTrader:
               save_every: int = 1,
               test_trained_model: bool = True,
               render_test_env: bool = False,
-              render_report: bool = True,
-              save_report: bool = False):
+              render_report: bool = False,
+              save_report: bool = True):
         train_provider, test_provider = self.data_provider.split_data_train_test(self.train_split_percentage)
 
         del test_provider
@@ -276,13 +288,8 @@ class RLTrader:
                 test_env.render(mode='human')
 
             if done:
-                net_worths = pd.DataFrame({
-                    'Date': info[0]['timestamps'],
-                    'Balance': info[0]['net_worths'],
-                })
-
-                net_worths.set_index('Date', drop=True, inplace=True)
-                returns = net_worths.pct_change()[1:]
+                net_worths, returns = net_worths_to_returns(info)
+                profit = net_worths['Balance'].iloc[-1] - net_worths['Balance'].iloc[0]
 
                 if render_report:
                     qs.plots.snapshot(returns.Balance, title='RL Trader Performance')
@@ -292,4 +299,4 @@ class RLTrader:
                     qs.reports.html(returns.Balance, file=reports_path)
 
         self.logger.info(
-            f'Finished testing model ({self.study_name}__{model_epoch}): ${"{:.2f}".format(np.sum(rewards))}')
+            f'Finished testing model ({self.study_name}__{model_epoch}): ${"{:.2f}".format(profit)}')
